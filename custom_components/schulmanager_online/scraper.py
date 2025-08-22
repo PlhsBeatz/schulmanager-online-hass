@@ -1,3 +1,4 @@
+
 """Web scraper for Schulmanager Online."""
 import asyncio
 import logging
@@ -50,17 +51,21 @@ class SchulmanagerOnlineScraper:
 
     async def _login(self, driver: webdriver.Chrome) -> bool:
         """Login to Schulmanager Online."""
+        _LOGGER.debug("Attempting to log in to Schulmanager Online.")
         try:
             driver.get(LOGIN_URL)
+            _LOGGER.debug(f"Navigated to {LOGIN_URL}")
             
             # Wait for login form
-            wait = WebDriverWait(driver, 15)
+            wait = WebDriverWait(driver, 20) # Increased timeout
             
             # Check if already logged in
             try:
-                wait.until(EC.presence_of_element_located((By.TAG_NAME, "widgets-container")))
+                wait.until(EC.presence_of_element_located((By.ID, "accountDropdown")))
+                _LOGGER.info("Already logged in.")
                 return True
             except:
+                _LOGGER.debug("Not already logged in, proceeding with login.")
                 pass
             
             # Find and fill login form
@@ -68,20 +73,37 @@ class SchulmanagerOnlineScraper:
                 EC.presence_of_element_located((By.ID, "emailOrUsername"))
             )
             password_field = driver.find_element(By.ID, "password")
+            login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Einloggen')]") # More robust button finding
             
+            _LOGGER.debug("Found username, password fields and login button.")
             username_field.send_keys(self._username)
-            password_field.send_keys(self._password + Keys.RETURN)
+            password_field.send_keys(self._password)
+            login_button.click() # Click the button instead of pressing RETURN
+            _LOGGER.debug("Entered credentials and clicked login button.")
             
-            # Wait for successful login
-            wait.until(EC.presence_of_element_located((By.ID, "accountDropdown")))
-            return True
+            # Wait for successful login or error message
+            try:
+                wait.until(EC.presence_of_element_located((By.ID, "accountDropdown")))
+                _LOGGER.info("Login successful.")
+                return True
+            except Exception as e:
+                _LOGGER.debug(f"Login failed to find accountDropdown: {e}")
+                # Check for invalid credentials message
+                try:
+                    error_message = driver.find_element(By.CLASS_NAME, "alert-danger").text
+                    _LOGGER.error(f"Login failed with error message: {error_message}")
+                    raise SchulmanagerOnlineScraperAuthError(f"Login failed: {error_message}")
+                except:
+                    _LOGGER.error("Login failed: No specific error message found on page.")
+                    raise SchulmanagerOnlineScraperAuthError("Login failed: Unknown reason, possibly invalid credentials or page change.")
             
         except Exception as err:
-            _LOGGER.error("Login failed: %s", err)
-            return False
+            _LOGGER.error("Login process encountered an unexpected error: %s", err)
+            raise SchulmanagerOnlineScraperAuthError(f"Login process failed: {err}") from err
 
     async def _scrape_homework(self, driver: webdriver.Chrome) -> List[Dict[str, Any]]:
         """Scrape homework data."""
+        _LOGGER.debug("Attempting to scrape homework.")
         try:
             driver.get(HOMEWORK_URL)
             
@@ -90,8 +112,10 @@ class SchulmanagerOnlineScraper:
             wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".tile")))
             
             if "Hausaufgaben" not in driver.page_source:
+                _LOGGER.debug("Hausaufgaben not found on first attempt, waiting 7 seconds.")
                 await asyncio.sleep(7)
                 if "Hausaufgaben" not in driver.page_source:
+                    _LOGGER.warning("Hausaufgaben still not found after retry. Returning empty list.")
                     return []
             
             html = driver.page_source
@@ -99,6 +123,7 @@ class SchulmanagerOnlineScraper:
             blocks.pop(0)
             
             if not blocks:
+                _LOGGER.info("No homework blocks found.")
                 return []
             
             homework_list = []
@@ -107,6 +132,7 @@ class SchulmanagerOnlineScraper:
                 if homework_item:
                     homework_list.extend(homework_item)
             
+            _LOGGER.debug(f"Scraped {len(homework_list)} homework items.")
             return homework_list
             
         except Exception as err:
@@ -158,6 +184,7 @@ class SchulmanagerOnlineScraper:
 
     async def _scrape_exams(self, driver: webdriver.Chrome) -> List[Dict[str, Any]]:
         """Scrape exam data."""
+        _LOGGER.debug("Attempting to scrape exams.")
         try:
             # Navigate to dashboard where exams are displayed
             driver.get("https://login.schulmanager-online.de/#/")
@@ -165,6 +192,7 @@ class SchulmanagerOnlineScraper:
             html = driver.page_source
             
             if "<table " not in html:
+                _LOGGER.info("No exam table found on dashboard. Returning empty list.")
                 return []
             
             table_content = html.split("<table ")[1].split("</table>")[0]
@@ -177,6 +205,7 @@ class SchulmanagerOnlineScraper:
                 if exam:
                     exams.append(exam)
             
+            _LOGGER.debug(f"Scraped {len(exams)} exam items.")
             return exams
             
         except Exception as err:
@@ -221,6 +250,7 @@ class SchulmanagerOnlineScraper:
 
     async def _scrape_timetable(self, driver: webdriver.Chrome, start_date: str = "") -> List[List[str]]:
         """Scrape timetable data."""
+        _LOGGER.debug("Attempting to scrape timetable.")
         try:
             url = f"{SCHEDULES_URL}/{start_date}"
             driver.get(url)
@@ -245,6 +275,7 @@ class SchulmanagerOnlineScraper:
                     lesson_info = self._parse_lesson_cell(column)
                     week_schedule[i].append(lesson_info)
             
+            _LOGGER.debug(f"Scraped timetable for {len(week_schedule)} days.")
             return week_schedule
             
         except Exception as err:
@@ -280,13 +311,14 @@ class SchulmanagerOnlineScraper:
                     lesson = lesson.split(">")[2].split("<", 1)[0].replace(" ", "").replace("\n", "")
                     
                     teacher = cell_content.split("timetable-right\">", 1)[1].split("timetable-bottom", 1)[0]
-                    teacher = teacher.split(">")[5].split("<", 1)[0].replace(" ", "").replace("\n", "")
+                    teacher = teacher.split(">")[5].split("<")[0].replace(" ", "").replace("\n", "")
                     
                     room = cell_content.split("timetable-bottom\">", 1)[1]
-                    room = room.split(">")[3].split("<", 1)[0].replace(" ", "").replace("\n", "")
+                    room = room.split(">")[3].split("<")[0].replace(" ", "").replace("\n", "")
                     
                     return f"{lesson} {teacher} {room}".strip()
                 except:
+                    _LOGGER.debug("Could not parse regular lesson details.")
                     return ""
             
         except Exception as err:
@@ -330,9 +362,12 @@ class SchulmanagerOnlineScraper:
         try:
             driver = self._init_driver()
             return await self._login(driver)
-        except Exception:
+        except Exception as e:
+            _LOGGER.error(f"Test connection failed: {e}")
             return False
         finally:
             if driver:
                 driver.quit()
+
+
 
