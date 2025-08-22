@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schulmanager Online",
+        "description": "Geben Sie Ihren Schulmanager Online Token ein",
+        "data": {
+          "token": "JWS Token",
+          "enable_scraping": "Erweiterte Daten aktivieren (Hausaufgaben, Termine, etc.)"
+        }
+      },
+      "scraping": {
+        "title": "Schulmanager Online - Erweiterte Daten",
+        "description": "Geben Sie Ihre Anmeldedaten für erweiterte Daten ein",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur API fehlgeschlagen",
+      "invalid_auth": "Ungültige Anmeldedaten",
+      "unknown": "Unbekannter Fehler aufgetreten"
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits konfiguriert"
+    }
+  }
+}
+
