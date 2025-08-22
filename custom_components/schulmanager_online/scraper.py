@@ -36,7 +36,7 @@ class SchulmanagerOnlineScraper:
         self._password = password
         self._driver = None
 
-    def _init_driver(self) -> webdriver.Chrome:
+    async def _init_driver(self) -> webdriver.Chrome:
         """Initialize the Chrome WebDriver."""
         chrome_options = Options()
         chrome_options.add_argument("--headless")
@@ -45,7 +45,13 @@ class SchulmanagerOnlineScraper:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         
-        service = Service(ChromeDriverManager().install())
+        # Run ChromeDriverManager().install() in a thread to avoid blocking the event loop
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            driver_path = await loop.run_in_executor(executor, ChromeDriverManager().install)
+        
+        service = Service(driver_path)
         driver = webdriver.Chrome(service=service, options=chrome_options)
         return driver
 
@@ -329,7 +335,7 @@ class SchulmanagerOnlineScraper:
         """Scrape all available data."""
         driver = None
         try:
-            driver = self._init_driver()
+            driver = await self._init_driver()
             
             # Login
             login_success = await self._login(driver)
@@ -360,7 +366,7 @@ class SchulmanagerOnlineScraper:
         """Test the connection and authentication."""
         driver = None
         try:
-            driver = self._init_driver()
+            driver = await self._init_driver()
             return await self._login(driver)
         except Exception as e:
             _LOGGER.error(f"Test connection failed: {e}")
